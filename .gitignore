@@ -2,3 +2,4 @@
 /*.so
 /target/
 .vscode/
+node_modules

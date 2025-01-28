@@ -1,50 +1,79 @@
+use solana_program::pubkey::Pubkey;
 use solana_program::program_error::ProgramError;
 use std::convert::TryInto;
 
 use crate::error::EscrowError::InvalidInstruction;
+
 pub enum EscrowInstruction {
-    /// Starts the trade by creating and populating an escrow account
-    /// and transferring ownership of the given temporary token account
-    /// to the PDA
-    ///
-    /// Accounts expected:
-    ///
-    /// 0. `[signer]` The account of the person initializing the escrow.
-    /// 1. `[writable]` Temporary token account that should be created
-    ///     prior to the instruction and owned by the initializer.
-    /// 2. `[]` The initializer's token account for the token they will
-    ///     receive the trade go through.
-    /// 3. `[writable]` The escrow account, it will hold all necessary
-    ///     information about the trade.
-    /// 4. `[]` The rent sysvar.
-    /// 5. `[]` The token program
     InitEscrow {
-        /// The amount party A expects to receive of token Y
         amount: u64,
+    },
+    CreateSwapPair {
+        token_a_mint: Pubkey,
+        token_b_mint: Pubkey,
+        amount_a: u64,
+        price_b: u64,
+    },
+    ExecuteSwap {
+        swap_pair_id: Pubkey,
     },
 }
 
 impl EscrowInstruction {
-    /// Unpacks a byte buffer into a [EscrowInstruction]
     pub fn unpack(input: &[u8]) -> Result<Self, ProgramError> {
-        // collect instruction as first item in the array
         let (tag, rest) = input.split_first().ok_or(InvalidInstruction)?;
 
-        // match instruction and pass `rest` as instruction data
         Ok(match tag {
             0 => Self::InitEscrow {
                 amount: Self::unpack_amount(rest)?,
+            },
+            1 => {
+                let (token_a_mint, rest) = Self::unpack_pubkey(rest)?;
+                let (token_b_mint, rest) = Self::unpack_pubkey(rest)?;
+                let (amount_a, rest) = Self::unpack_u64(rest)?;
+                let (price_b, _) = Self::unpack_u64(rest)?;
+                
+                Self::CreateSwapPair {
+                    token_a_mint,
+                    token_b_mint,
+                    amount_a,
+                    price_b,
+                }
+            },
+            2 => {
+                let (swap_pair_id, _) = Self::unpack_pubkey(rest)?;
+                Self::ExecuteSwap { swap_pair_id }
             },
             _ => return Err(InvalidInstruction.into()),
         })
     }
 
     fn unpack_amount(input: &[u8]) -> Result<u64, ProgramError> {
-        let amount: u64 = input
+        let amount = input
             .get(..8)
-            .and_then(|slice: &[u8]| slice.try_into().ok())
+            .and_then(|slice| slice.try_into().ok())
             .map(u64::from_le_bytes)
             .ok_or(InvalidInstruction)?;
         Ok(amount)
+    }
+
+    fn unpack_pubkey(input: &[u8]) -> Result<(Pubkey, &[u8]), ProgramError> {
+        if input.len() < 32 {
+            return Err(InvalidInstruction.into());
+        }
+        let (key, rest) = input.split_at(32);
+        let pk = Pubkey::from(key);
+        Ok((pk, rest))
+    }
+
+    fn unpack_u64(input: &[u8]) -> Result<(u64, &[u8]), ProgramError> {
+        if input.len() < 8 {
+            return Err(InvalidInstruction.into());
+        }
+        let (amount, rest) = input.split_at(8);
+        let amount = amount.try_into()
+            .map(u64::from_le_bytes)
+            .map_err(|_| InvalidInstruction)?;
+        Ok((amount, rest))
     }
 }

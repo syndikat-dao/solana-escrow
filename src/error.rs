@@ -4,6 +4,12 @@ use thiserror::Error;
 #[derive(Error, Debug, Copy, Clone)]
 pub enum EscrowError {
     // Invalid instruction
+    #[error("Invalid swap pair")]
+    InvalidSwapPair,
+    #[error("Insufficient balance")]
+    InsufficientBalance,
+    #[error("Swap pair inactive")]
+    SwapPairInactive,
     #[error("Invalid instruction")]
     InvalidInstruction,
     #[error("Rent exempted")]
